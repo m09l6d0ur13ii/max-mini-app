@@ -301,6 +301,23 @@ export class BridgeManager {
               },
             },
           ];
+        } else {
+          // All reactions removed -> restore the original reaction buttons in MAX!
+          const reactionButtons = [
+            { type: 'callback', text: '👍', payload: 'react:👍' },
+            { type: 'callback', text: '🔥', payload: 'react:🔥' },
+            { type: 'callback', text: '❤️', payload: 'react:❤️' },
+            { type: 'callback', text: '👏', payload: 'react:👏' },
+            { type: 'callback', text: '👎', payload: 'react:👎' },
+          ];
+          buttonsAttachment = [
+            {
+              type: 'inline_keyboard',
+              payload: {
+                buttons: [reactionButtons],
+              },
+            },
+          ];
         }
 
         await this.maxBot.api.editMessage(record.maxMid, {
