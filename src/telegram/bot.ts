@@ -15,10 +15,20 @@ export function createTelegramBot(): TgBot {
     // Ignore messages from the bot itself
     if (ctx.from?.id === ctx.me.id) return;
 
-    // Auto-detect Telegram group ID if not configured yet
+    // Handle migration from group to supergroup
+    if ((ctx.message as any)?.migrate_to_chat_id) {
+      config.telegram.chatId = (ctx.message as any).migrate_to_chat_id;
+      console.log(`[Telegram] 🔄 Группа переведена в супергруппу. Новый ID: ${config.telegram.chatId}`);
+      return;
+    }
+
+    // Auto-detect or update Telegram group ID
     if (!config.telegram.chatId && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
       config.telegram.chatId = ctx.chat.id;
       console.log(`[Telegram] 🎯 Привязана группа: "${(ctx.chat as any).title || 'Группа'}" (ID: ${ctx.chat.id})`);
+    } else if (ctx.chat.type === 'supergroup' && config.telegram.chatId && config.telegram.chatId !== ctx.chat.id && String(ctx.chat.id).startsWith('-100')) {
+      config.telegram.chatId = ctx.chat.id;
+      console.log(`[Telegram] 🔄 Обновлен ID супергруппы: ${config.telegram.chatId}`);
     }
 
     // Ignore messages from other chats if configured

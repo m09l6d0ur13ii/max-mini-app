@@ -228,8 +228,20 @@ export class BridgeManager {
 
       store.saveMessage(record);
       console.log(`[Bridge] MAX -> TG synced: MAX#${params.mid} -> TG#${tgMessageId}`);
-    } catch (err) {
-      console.error('[Bridge] Failed to forward MAX message to Telegram:', err);
+    } catch (err: any) {
+      if (err.parameters?.migrate_to_chat_id) {
+        const newChatId = err.parameters.migrate_to_chat_id;
+        console.log(`[Bridge] 🔄 Telegram группа обновилась до супергруппы: ${newChatId}. Повторяем отправку...`);
+        config.telegram.chatId = newChatId;
+        try {
+          const retryMsg = await this.tgBot.api.sendMessage(newChatId, `<b>[MAX] 👤 ${escapeHtml(params.senderUsername ? `${params.senderName} (@${params.senderUsername})` : params.senderName)}:</b>\n${escapeHtml(params.text || '')}`, { parse_mode: 'HTML' });
+          console.log(`[Bridge] MAX -> TG повторно успешно отправлено: TG#${retryMsg.message_id}`);
+        } catch (retryErr) {
+          console.error('[Bridge] Ошибка при повторной отправке в новую супергруппу:', retryErr);
+        }
+      } else {
+        console.error('[Bridge] Failed to forward MAX message to Telegram:', err);
+      }
     }
   }
 
