@@ -1,3 +1,5 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 import { config, validateConfig } from './config';
 import { store } from './store';
 import { bridge } from './bridge/manager';
@@ -27,25 +29,28 @@ async function main() {
   }
 
   // 2. Start Telegram Bot
-  if (config.telegram.token && config.telegram.chatId) {
+  if (config.telegram.token) {
     try {
       const tgBot = createTelegramBot();
       bridge.setTelegramBot(tgBot);
 
       // Start long polling for Telegram
       tgBot.start({
-        drop_pending_updates: true,
         allowed_updates: ['message', 'edited_message', 'message_reaction', 'message_reaction_count'],
         onStart: (botInfo) => {
-          console.log(`[Telegram] Bot started: @${botInfo.username} (ID: ${botInfo.id})`);
-          console.log(`[Telegram] Bridging chat ID: ${config.telegram.chatId}`);
+          console.log(`[Telegram] ✅ Бот запущен: @${botInfo.username} (ID: ${botInfo.id})`);
+          if (config.telegram.chatId) {
+            console.log(`[Telegram] Чат привязан: ID ${config.telegram.chatId}`);
+          } else {
+            console.log(`[Telegram] ⏳ Напишите любое сообщение в группу Telegram для автоматической привязки!`);
+          }
         },
       });
     } catch (err) {
       console.error('[Telegram] Failed to start Telegram bot:', err);
     }
   } else {
-    console.log('[Telegram] Bot skipped (token or chatId not provided in .env)');
+    console.log('[Telegram] Bot skipped (token not provided in .env)');
   }
 
   // 3. Start MAX Bot

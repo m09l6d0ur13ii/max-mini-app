@@ -15,8 +15,14 @@ export function createTelegramBot(): TgBot {
     // Ignore messages from the bot itself
     if (ctx.from?.id === ctx.me.id) return;
 
+    // Auto-detect Telegram group ID if not configured yet
+    if (!config.telegram.chatId && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
+      config.telegram.chatId = ctx.chat.id;
+      console.log(`[Telegram] 🎯 Привязана группа: "${(ctx.chat as any).title || 'Группа'}" (ID: ${ctx.chat.id})`);
+    }
+
     // Ignore messages from other chats if configured
-    if (ctx.chat.id !== config.telegram.chatId) {
+    if (config.telegram.chatId && ctx.chat.id !== config.telegram.chatId) {
       if (config.server.debug) {
         console.log(`[Telegram] Ignored message from chat ${ctx.chat.id} (listening for ${config.telegram.chatId})`);
       }
@@ -77,7 +83,12 @@ export function createTelegramBot(): TgBot {
       const update = ctx.update.message_reaction;
       if (!update) return;
 
-      if (update.chat.id !== config.telegram.chatId) return;
+      if (!config.telegram.chatId && (update.chat.type === 'group' || update.chat.type === 'supergroup')) {
+        config.telegram.chatId = update.chat.id;
+        console.log(`[Telegram] 🎯 Привязана группа: ID ${update.chat.id}`);
+      }
+
+      if (config.telegram.chatId && update.chat.id !== config.telegram.chatId) return;
 
       const userName = update.user
         ? [update.user.first_name, update.user.last_name].filter(Boolean).join(' ')
