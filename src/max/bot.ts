@@ -1,6 +1,7 @@
 import { Bot as MaxBot } from '@maxhub/max-bot-api';
 import { config } from '../config';
 import { bridge } from '../bridge/manager';
+import { store } from '../store';
 
 const EMOJI_REGEX = /^(\p{Emoji_Presentation}|\p{Extended_Pictographic}|\u200d)+$/u;
 
@@ -29,6 +30,7 @@ export function createMaxBot(): MaxBot {
       if (!chatId) return;
 
       const text = msg.body?.text || '';
+      console.log(`[MAX] 📩 Получено сообщение от ${senderName} в чате ${chatId}: "${text}"`);
       const replyToMid = msg.link?.message?.mid;
 
       // Check if this message is an emoji reaction to a replied message
@@ -117,6 +119,74 @@ export function createMaxBot(): MaxBot {
       }
     } catch (err) {
       console.error('[MAX] Error processing comment_created:', err);
+    }
+  });
+
+  // Handle 1-click reaction buttons under messages in MAX
+  bot.on('message_callback', async (ctx) => {
+    try {
+      const cb = ctx.callback;
+      if (!cb) return;
+
+      const payload = cb.payload || '';
+      if (payload === 'done') {
+        try {
+          await ctx.answerOnCallback({});
+        } catch (e) {}
+        return;
+      }
+
+      if (payload.startsWith('react:')) {
+        const emoji = payload.replace('react:', '').trim();
+        const mid = ctx.messageId || ctx.message?.body.mid;
+        const chatId = ctx.chatId || ctx.message?.recipient.chat_id;
+        const sender = cb.user || ctx.user;
+        const senderName = [sender?.first_name, sender?.last_name].filter(Boolean).join(' ') || 'Пользователь MAX';
+
+        console.log(`[MAX] 🔘 Нажата кнопка реакции ${emoji} на сообщении ${mid} пользователем ${senderName}`);
+
+        if (mid && chatId) {
+          await bridge.syncMaxReaction({
+            chatId,
+            mid,
+            user: senderName,
+            emoji,
+            action: 'add',
+          });
+
+          // Visually update the message in MAX to show order is taken/collected and replace buttons
+          const record = store.findByMax(chatId, mid);
+          if (record) {
+            const authorDisplay = record.authorUsername ? `${record.authorName} (@${record.authorUsername})` : record.authorName;
+            const baseText = `[Telegram] 👤 ${authorDisplay}:\n${record.text || ''}`;
+            const updatedText = `${baseText}\n\n✅ <b>Заказ собран / взят в работу!</b>\n(Сотрудник: ${senderName} поставил ${emoji} в MAX)`;
+
+            try {
+              await bot.api.editMessage(mid, {
+                text: updatedText,
+                attachments: [
+                  {
+                    type: 'inline_keyboard',
+                    payload: {
+                      buttons: [[{ type: 'callback', text: `✅ Заказ закрыт (${emoji})`, payload: 'done' }]],
+                    },
+                  },
+                ],
+              });
+              console.log(`[MAX] Order marked as collected on message #${mid}`);
+            } catch (editErr) {
+              console.warn('[MAX] Could not edit message after button click:', editErr);
+            }
+          }
+        }
+
+        // Answer callback
+        try {
+          await ctx.answerOnCallback({});
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.error('[MAX] Error processing message_callback:', err);
     }
   });
 

@@ -94,6 +94,22 @@ export class BridgeManager {
         ];
       }
 
+      // Add interactive reaction buttons directly under the message in MAX
+      const reactionButtons = [
+        { type: 'callback', text: '👍', payload: 'react:👍' },
+        { type: 'callback', text: '🔥', payload: 'react:🔥' },
+        { type: 'callback', text: '❤️', payload: 'react:❤️' },
+        { type: 'callback', text: '👏', payload: 'react:👏' },
+        { type: 'callback', text: '👎', payload: 'react:👎' },
+      ];
+      options.attachments = options.attachments || [];
+      options.attachments.push({
+        type: 'inline_keyboard',
+        payload: {
+          buttons: [reactionButtons],
+        },
+      });
+
       // Send to MAX chat
       const maxMsg = await this.maxBot.api.sendMessageToChat(config.max.chatId, maxText, options);
       const maxMid = maxMsg.body.mid;
@@ -150,10 +166,8 @@ export class BridgeManager {
     }
 
     // Only forward messages from the configured MAX chat
-    if (params.chatId !== config.max.chatId) {
-      if (config.server.debug) {
-        console.log(`[Bridge] Ignored MAX message from chat ${params.chatId} (expected ${config.max.chatId})`);
-      }
+    if (config.max.chatId && String(params.chatId) !== String(config.max.chatId)) {
+      console.log(`[Bridge] Ignored MAX message from chat ${params.chatId} (configured for ${config.max.chatId})`);
       return;
     }
 
@@ -263,6 +277,58 @@ export class BridgeManager {
     for (const emoji of removed) {
       store.removeReaction(record, emoji, params.user);
       console.log(`[Bridge] Reaction removed in TG on message ${record.id}: ${emoji} by ${params.user}`);
+    }
+
+    // When reaction added in Telegram: update MAX message text and replace buttons with completed badge
+    if (this.maxBot && record.maxMid) {
+      try {
+        const authorDisplay = record.authorUsername ? `${record.authorName} (@${record.authorUsername})` : record.authorName;
+        const baseText = `[Telegram] 👤 ${authorDisplay}:\n${record.text || ''}`;
+        const reactionBadges = (record.reactions || [])
+          .map((r) => `${r.emoji}`)
+          .join(' ');
+
+        let updatedText = baseText;
+        let buttonsAttachment: any[] = [];
+
+        if (reactionBadges) {
+          updatedText = `${baseText}\n\n✅ <b>Заказ собран / взят в работу!</b>\n(Реакция: ${reactionBadges} от ${params.user} в Telegram)`;
+          buttonsAttachment = [
+            {
+              type: 'inline_keyboard',
+              payload: {
+                buttons: [[{ type: 'callback', text: `✅ Заказ собран (${reactionBadges})`, payload: 'done' }]],
+              },
+            },
+          ];
+        } else {
+          const reactionButtons = [
+            { type: 'callback', text: '👍', payload: 'react:👍' },
+            { type: 'callback', text: '🔥', payload: 'react:🔥' },
+            { type: 'callback', text: '❤️', payload: 'react:❤️' },
+            { type: 'callback', text: '👏', payload: 'react:👏' },
+            { type: 'callback', text: '👎', payload: 'react:👎' },
+          ];
+          buttonsAttachment = [
+            {
+              type: 'inline_keyboard',
+              payload: {
+                buttons: [reactionButtons],
+              },
+            },
+          ];
+        }
+
+        await this.maxBot.api.editMessage(record.maxMid, {
+          text: updatedText,
+          attachments: buttonsAttachment,
+        });
+        console.log(`[Bridge] Updated MAX message #${record.maxMid} (Reactions: ${reactionBadges || 'none'})`);
+      } catch (editErr) {
+        if (config.server.debug) {
+          console.warn('[Bridge] Could not edit MAX message with reactions:', editErr);
+        }
+      }
     }
   }
 
