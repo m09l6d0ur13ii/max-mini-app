@@ -157,9 +157,9 @@ export function createMaxBot(): MaxBot {
           // Visually update the message in MAX to show order is taken/collected and replace buttons
           const record = store.findByMax(chatId, mid);
           if (record) {
-            const authorDisplay = record.authorUsername ? `${record.authorName} (@${record.authorUsername})` : record.authorName;
-            const baseText = `[Telegram] 👤 ${authorDisplay}:\n${record.text || ''}`;
-            const updatedText = `${baseText}\n\n✅ <b>Заказ собран / взят в работу!</b>\n(Сотрудник: ${senderName} поставил ${emoji} в MAX)`;
+            const author = record.authorName || 'Заказ';
+            const baseText = `${author}:\n${record.text || ''}`;
+            const updatedText = `${baseText}\n\n✅ Заказ собран (${emoji} ${senderName})`;
 
             try {
               await bot.api.editMessage(mid, {

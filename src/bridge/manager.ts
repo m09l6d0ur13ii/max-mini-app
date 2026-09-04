@@ -62,8 +62,8 @@ export class BridgeManager {
 
     try {
       const recordId = crypto.randomUUID();
-      const authorDisplay = params.senderUsername ? `${params.senderName} (@${params.senderUsername})` : params.senderName;
-      let maxText = `[Telegram] 👤 ${authorDisplay}:\n${params.text || (params.hasMedia ? `[Вложение: ${params.mediaType}]` : '')}`;
+      const author = params.senderName || 'Заказ';
+      let maxText = `${author}:\n${params.text || (params.hasMedia ? `[Вложение: ${params.mediaType}]` : '')}`;
 
       // Check if this is a reply to a known bridged message
       let replyMid: string | undefined;
@@ -173,9 +173,9 @@ export class BridgeManager {
 
     try {
       const recordId = crypto.randomUUID();
-      const authorDisplay = params.senderUsername ? `${params.senderName} (@${params.senderUsername})` : params.senderName;
+      const author = params.senderName || 'Склад';
       const safeText = escapeHtml(params.text || (params.hasMedia ? `[Вложение: ${params.mediaType}]` : ''));
-      const tgText = `<b>[MAX] 👤 ${escapeHtml(authorDisplay)}:</b>\n${safeText}`;
+      const tgText = `<b>${escapeHtml(author)}:</b>\n${safeText}`;
 
       // Check if this is a reply to a known bridged message
       let replyTgId: number | undefined;
@@ -272,18 +272,6 @@ export class BridgeManager {
     for (const emoji of added) {
       store.addReaction(record, emoji, params.user, 'telegram');
       console.log(`[Bridge] Reaction added in TG on message ${record.id}: ${emoji} by ${params.user}`);
-
-      // Forward reaction notification / comment to MAX if MAX mid exists
-      if (this.maxBot && record.maxMid) {
-        try {
-          await this.maxBot.api.sendComment(record.maxMid, `👤 ${params.user} поставил реакцию: ${emoji}`, {});
-        } catch (err) {
-          // If comments are not enabled in this chat, fallback or log safely
-          if (config.server.debug) {
-            console.warn('[Bridge] MAX sendComment note:', err);
-          }
-        }
-      }
     }
 
     for (const emoji of removed) {
@@ -291,11 +279,11 @@ export class BridgeManager {
       console.log(`[Bridge] Reaction removed in TG on message ${record.id}: ${emoji} by ${params.user}`);
     }
 
-    // When reaction added in Telegram: update MAX message text and replace buttons with completed badge
-    if (this.maxBot && record.maxMid) {
+    // Update MAX message: append clean status and replace buttons with closed badge
+    if (this.maxBot && record.maxMid && record.source === 'telegram') {
       try {
-        const authorDisplay = record.authorUsername ? `${record.authorName} (@${record.authorUsername})` : record.authorName;
-        const baseText = `[Telegram] 👤 ${authorDisplay}:\n${record.text || ''}`;
+        const author = record.authorName || 'Заказ';
+        const baseText = `${author}:\n${record.text || ''}`;
         const reactionBadges = (record.reactions || [])
           .map((r) => `${r.emoji}`)
           .join(' ');
@@ -304,28 +292,12 @@ export class BridgeManager {
         let buttonsAttachment: any[] = [];
 
         if (reactionBadges) {
-          updatedText = `${baseText}\n\n✅ <b>Заказ собран / взят в работу!</b>\n(Реакция: ${reactionBadges} от ${params.user} в Telegram)`;
+          updatedText = `${baseText}\n\n✅ Заказ собран (${reactionBadges} ${params.user})`;
           buttonsAttachment = [
             {
               type: 'inline_keyboard',
               payload: {
-                buttons: [[{ type: 'callback', text: `✅ Заказ собран (${reactionBadges})`, payload: 'done' }]],
-              },
-            },
-          ];
-        } else {
-          const reactionButtons = [
-            { type: 'callback', text: '👍', payload: 'react:👍' },
-            { type: 'callback', text: '🔥', payload: 'react:🔥' },
-            { type: 'callback', text: '❤️', payload: 'react:❤️' },
-            { type: 'callback', text: '👏', payload: 'react:👏' },
-            { type: 'callback', text: '👎', payload: 'react:👎' },
-          ];
-          buttonsAttachment = [
-            {
-              type: 'inline_keyboard',
-              payload: {
-                buttons: [reactionButtons],
+                buttons: [[{ type: 'callback', text: `✅ Заказ закрыт (${reactionBadges})`, payload: 'done' }]],
               },
             },
           ];
@@ -335,7 +307,7 @@ export class BridgeManager {
           text: updatedText,
           attachments: buttonsAttachment,
         });
-        console.log(`[Bridge] Updated MAX message #${record.maxMid} (Reactions: ${reactionBadges || 'none'})`);
+        console.log(`[Bridge] Updated MAX message #${record.maxMid} with closed status`);
       } catch (editErr) {
         if (config.server.debug) {
           console.warn('[Bridge] Could not edit MAX message with reactions:', editErr);
