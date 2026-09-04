@@ -4,6 +4,8 @@ import { config } from '../config';
 import { store } from '../store';
 import { MessageRecord } from '../store/types';
 import crypto from 'crypto';
+import https from 'https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export class BridgeManager {
   private tgBot: TgBot | null = null;
@@ -31,6 +33,56 @@ export class BridgeManager {
         console.warn('[Bridge] Could not fetch MAX bot info upfront:', err);
       }
     }
+  }
+
+  /**
+   * Resilient Telegram API caller using https and proxy support
+   */
+  public async callTelegramApi(method: string, body: any): Promise<any> {
+    const token = config.telegram.token;
+    const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+    const agent = proxy ? new HttpsProxyAgent(proxy) : undefined;
+
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify(body);
+      const req = https.request(
+        `https://api.telegram.org/bot${token}/${method}`,
+        {
+          method: 'POST',
+          agent,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(data),
+          },
+          timeout: 10000,
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (c) => (out += c));
+          res.on('end', () => {
+            try {
+              const json = JSON.parse(out);
+              if (json.ok) {
+                resolve(json.result);
+              } else {
+                reject(new Error(`Telegram API Error ${json.error_code}: ${json.description}`));
+              }
+            } catch (e) {
+              reject(new Error(`Invalid JSON response: ${out}`));
+            }
+          });
+        }
+      );
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error(`Timeout calling Telegram API ${method}`));
+      });
+
+      req.write(data);
+      req.end();
+    });
   }
 
   /**
@@ -297,7 +349,10 @@ export class BridgeManager {
             {
               type: 'inline_keyboard',
               payload: {
-                buttons: [[{ type: 'callback', text: `✅ Заказ закрыт (${reactionBadges})`, payload: 'done' }]],
+                buttons: [
+                  [{ type: 'callback', text: `✅ Заказ закрыт (${reactionBadges})`, payload: 'done' }],
+                  [{ type: 'callback', text: `❌ Отменить выполнение`, payload: 'unreact' }],
+                ],
               },
             },
           ];
@@ -324,7 +379,7 @@ export class BridgeManager {
           text: updatedText,
           attachments: buttonsAttachment,
         });
-        console.log(`[Bridge] Updated MAX message #${record.maxMid} with closed status`);
+        console.log(`[Bridge] Updated MAX message #${record.maxMid} with status`);
       } catch (editErr) {
         if (config.server.debug) {
           console.warn('[Bridge] Could not edit MAX message with reactions:', editErr);
@@ -355,11 +410,13 @@ export class BridgeManager {
 
     if (params.action === 'add') {
       const changed = store.addReaction(record, params.emoji, params.user, 'max');
-      if (changed && this.tgBot && record.tgChatId && record.tgMessageId) {
+      if (changed && record.tgChatId && record.tgMessageId) {
         try {
-          await this.tgBot.api.setMessageReaction(record.tgChatId, record.tgMessageId, [
-            { type: 'emoji', emoji: params.emoji as any },
-          ]);
+          await this.callTelegramApi('setMessageReaction', {
+            chat_id: record.tgChatId,
+            message_id: record.tgMessageId,
+            reaction: [{ type: 'emoji', emoji: params.emoji }],
+          });
           console.log(`[Bridge] Mirrored MAX reaction ${params.emoji} to Telegram message #${record.tgMessageId}`);
         } catch (err) {
           console.error('[Bridge] Failed to set reaction in Telegram:', err);
@@ -367,23 +424,60 @@ export class BridgeManager {
       }
     } else {
       const changed = store.removeReaction(record, params.emoji, params.user);
-      if (changed && this.tgBot && record.tgChatId && record.tgMessageId) {
+      if (changed && record.tgChatId && record.tgMessageId) {
         try {
-          // If there are remaining reactions, set the first one, else clear
           const remaining = record.reactions?.[0]?.emoji;
-          if (remaining) {
-            await this.tgBot.api.setMessageReaction(record.tgChatId, record.tgMessageId, [
-              { type: 'emoji', emoji: remaining as any },
-            ]);
-          } else {
-            await this.tgBot.api.setMessageReaction(record.tgChatId, record.tgMessageId, []);
-          }
+          const reaction = remaining ? [{ type: 'emoji', emoji: remaining }] : [];
+          await this.callTelegramApi('setMessageReaction', {
+            chat_id: record.tgChatId,
+            message_id: record.tgMessageId,
+            reaction,
+          });
           console.log(`[Bridge] Cleared/updated reaction in Telegram message #${record.tgMessageId}`);
         } catch (err) {
           console.error('[Bridge] Failed to clear reaction in Telegram:', err);
         }
       }
     }
+  }
+
+  /**
+   * Deletes a synced message across both Telegram and MAX
+   */
+  public async deleteSyncedMessage(params: { source: 'telegram' | 'max'; id: number | string }): Promise<void> {
+    let record: MessageRecord | undefined;
+    if (params.source === 'telegram') {
+      record = store.findByTg(config.telegram.chatId, Number(params.id));
+    } else {
+      record = store.findByMax(config.max.chatId, String(params.id));
+    }
+
+    if (!record) return;
+
+    // Delete in Telegram
+    if (record.tgChatId && record.tgMessageId) {
+      try {
+        await this.callTelegramApi('deleteMessage', {
+          chat_id: record.tgChatId,
+          message_id: record.tgMessageId,
+        });
+        console.log(`[Bridge] Deleted message #${record.tgMessageId} in Telegram`);
+      } catch (err) {
+        console.warn('[Bridge] Could not delete Telegram message:', err);
+      }
+    }
+
+    // Delete in MAX
+    if (this.maxBot && record.maxMid) {
+      try {
+        await this.maxBot.api.deleteMessage(record.maxMid);
+        console.log(`[Bridge] Deleted message #${record.maxMid} in MAX`);
+      } catch (err) {
+        console.warn('[Bridge] Could not delete MAX message:', err);
+      }
+    }
+
+    store.deleteMessage(record.id);
   }
 
   /**

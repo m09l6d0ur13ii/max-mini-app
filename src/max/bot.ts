@@ -136,6 +136,71 @@ export function createMaxBot(): MaxBot {
         return;
       }
 
+      // Worker clicks "Отменить выполнение" -> cancel order, clear TG reaction, restore reaction buttons in MAX!
+      if (payload === 'unreact') {
+        const mid = ctx.messageId || ctx.message?.body.mid;
+        const chatId = ctx.chatId || ctx.message?.recipient.chat_id;
+        const sender = cb.user || ctx.user;
+        const senderName = [sender?.first_name, sender?.last_name].filter(Boolean).join(' ') || 'Сотрудник';
+
+        console.log(`[MAX] 🔄 Отмена выполнения заказа на сообщении ${mid} пользователем ${senderName}`);
+
+        if (mid && chatId) {
+          const record = store.findByMax(chatId, mid);
+          if (record) {
+            // Clear reaction in Telegram
+            if (record.tgChatId && record.tgMessageId) {
+              try {
+                await bridge.callTelegramApi('setMessageReaction', {
+                  chat_id: record.tgChatId,
+                  message_id: record.tgMessageId,
+                  reaction: [],
+                });
+                console.log(`[Bridge] Reaction cleared in TG for message #${record.tgMessageId}`);
+              } catch (tgErr) {
+                console.warn('[Bridge] Could not clear TG reaction:', tgErr);
+              }
+            }
+
+            // Restore clean text and reaction buttons in MAX
+            record.reactions = [];
+            store.updateRecord(record);
+
+            const author = record.authorName || 'Заказ';
+            const baseText = `${author}:\n${record.text || ''}`;
+            const reactionButtons = [
+              { type: 'callback' as const, text: '👍', payload: 'react:👍' },
+              { type: 'callback' as const, text: '🔥', payload: 'react:🔥' },
+              { type: 'callback' as const, text: '❤️', payload: 'react:❤️' },
+              { type: 'callback' as const, text: '👏', payload: 'react:👏' },
+              { type: 'callback' as const, text: '👎', payload: 'react:👎' },
+            ];
+
+            try {
+              await bot.api.editMessage(mid, {
+                text: baseText,
+                attachments: [
+                  {
+                    type: 'inline_keyboard',
+                    payload: {
+                      buttons: [reactionButtons],
+                    },
+                  },
+                ],
+              });
+              console.log(`[MAX] Order #${mid} returned to work, buttons restored`);
+            } catch (editErr) {
+              console.warn('[MAX] Could not restore buttons:', editErr);
+            }
+          }
+        }
+
+        try {
+          await ctx.answerOnCallback({});
+        } catch (e) {}
+        return;
+      }
+
       if (payload.startsWith('react:')) {
         const emoji = payload.replace('react:', '').trim();
         const mid = ctx.messageId || ctx.message?.body.mid;
@@ -168,7 +233,10 @@ export function createMaxBot(): MaxBot {
                   {
                     type: 'inline_keyboard',
                     payload: {
-                      buttons: [[{ type: 'callback', text: `✅ Заказ закрыт (${emoji})`, payload: 'done' }]],
+                      buttons: [
+                        [{ type: 'callback', text: `✅ Заказ закрыт (${emoji})`, payload: 'done' }],
+                        [{ type: 'callback', text: `❌ Отменить выполнение`, payload: 'unreact' }],
+                      ],
                     },
                   },
                 ],
@@ -187,6 +255,19 @@ export function createMaxBot(): MaxBot {
       }
     } catch (err) {
       console.error('[MAX] Error processing message_callback:', err);
+    }
+  });
+
+  // Handle message deletion in MAX -> delete corresponding message in Telegram
+  bot.on('message_removed', async (ctx) => {
+    try {
+      const mid = (ctx.update as any)?.message_id;
+      if (mid) {
+        console.log(`[MAX] 🗑 Сообщение удалено в MAX: ${mid}`);
+        await bridge.deleteSyncedMessage({ source: 'max', id: mid });
+      }
+    } catch (err) {
+      console.error('[MAX] Error processing message_removed:', err);
     }
   });
 

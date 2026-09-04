@@ -41,8 +41,16 @@ export function createTelegramBot(): TgBot {
 
     const senderName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || 'Аноним';
     const senderUsername = ctx.from?.username;
-    const text = ctx.message.text || ctx.message.caption || '';
+    const text = (ctx.message.text || ctx.message.caption || '').trim();
     const replyToMessageId = ctx.message.reply_to_message?.message_id;
+
+    // If user replies with /del or /delete or /отмена -> delete the message in both Telegram and MAX
+    if (replyToMessageId && (text === '/del' || text === '/delete' || text.toLowerCase() === '/отмена' || text.toLowerCase() === 'отмена')) {
+      console.log(`[Telegram] 🗑 Запрос на удаление сообщения TG#${replyToMessageId}`);
+      try { await ctx.deleteMessage(); } catch (e) {}
+      await bridge.deleteSyncedMessage({ source: 'telegram', id: replyToMessageId });
+      return;
+    }
 
     let hasMedia = false;
     let mediaType: 'photo' | 'video' | 'audio' | 'voice' | 'document' | 'sticker' | 'other' | undefined;

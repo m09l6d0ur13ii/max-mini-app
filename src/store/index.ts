@@ -100,6 +100,10 @@ export class BridgeStore {
     this.scheduleFlush();
   }
 
+  public updateRecord(record: MessageRecord): void {
+    this.scheduleFlush();
+  }
+
   public updateMapping(
     recordId: string,
     updates: { tgChatId?: number; tgMessageId?: number; maxChatId?: number; maxMid?: string }
@@ -130,6 +134,20 @@ export class BridgeStore {
 
   public findById(id: string): MessageRecord | undefined {
     return this.idIndex.get(id);
+  }
+
+  public deleteMessage(id: string): void {
+    const record = this.idIndex.get(id);
+    if (!record) return;
+    this.idIndex.delete(id);
+    if (record.tgChatId && record.tgMessageId) {
+      this.tgIndex.delete(`${record.tgChatId}:${record.tgMessageId}`);
+    }
+    if (record.maxChatId && record.maxMid) {
+      this.maxIndex.delete(`${record.maxChatId}:${record.maxMid}`);
+    }
+    this.messages = this.messages.filter((m) => m.id !== id);
+    this.scheduleFlush();
   }
 
   public addReaction(

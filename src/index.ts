@@ -1,8 +1,4 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-delete process.env.HTTPS_PROXY;
-delete process.env.https_proxy;
-delete process.env.HTTP_PROXY;
-delete process.env.http_proxy;
 
 import { config, validateConfig } from './config';
 import { store } from './store';
