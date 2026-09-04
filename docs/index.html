@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MAX ⇄ Telegram Bridge Mini-App</title>
+  <!-- MAX WebApp Bridge SDK -->
+  <script src="https://st.max.ru/js/max-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo-group">
+          <span class="logo-badge max-logo">MAX</span>
+          <span class="bridge-arrow">⇄</span>
+          <span class="logo-badge tg-logo">TG</span>
+        </div>
+        <h1 class="app-title">MAX ⇄ Telegram Bridge</h1>
+        <p class="app-subtitle" id="mode-badge">Режим: Определение соединения...</p>
+      </div>
+      <div class="header-right">
+        <button id="settings-btn" class="icon-btn" title="Настройки токенов и чатов">⚙️</button>
+        <div class="user-pill" id="user-info">
+          <span class="user-avatar" id="user-avatar">👤</span>
+          <span class="user-name" id="user-name">Гость</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Settings Drawer / Modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>⚙️ Настройки шлюза (GitHub Pages)</h3>
+          <button id="close-settings-btn" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="cfg-tg-token">Telegram Bot Token:</label>
+            <input type="text" id="cfg-tg-token" placeholder="8722331145:AAFRH6ngx8FA5pVdegOjpA_5b65jIyia50k">
+          </div>
+          <div class="form-group">
+            <label for="cfg-tg-chat">Telegram Chat ID:</label>
+            <div class="input-with-action">
+              <input type="text" id="cfg-tg-chat" placeholder="-100...">
+              <button id="detect-tg-chat-btn" class="secondary-btn" title="Получить ID группы из последних сообщений">🔍 Найти</button>
+            </div>
+            <small class="hint">Нажмите "Найти", если бот уже добавлен в группу Telegram и там есть сообщения.</small>
+          </div>
+          <hr class="divider">
+          <div class="form-group">
+            <label for="cfg-max-token">MAX Bot Token:</label>
+            <input type="password" id="cfg-max-token" placeholder="Вставьте токен бота MAX из dev.max.ru">
+          </div>
+          <div class="form-group">
+            <label for="cfg-max-chat">MAX Chat ID:</label>
+            <div class="input-with-action">
+              <input type="text" id="cfg-max-chat" placeholder="ID чата в MAX">
+              <button id="detect-max-chat-btn" class="secondary-btn" title="Взять ID чата из MAX WebApp Bridge">📱 Из MAX</button>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button id="save-settings-btn" class="primary-btn">Сохранить настройки</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Dashboard -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">💬</div>
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Сообщений всего</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">✈️</div>
+        <div class="stat-value" id="stat-tg">0</div>
+        <div class="stat-label">Из Telegram</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🌐</div>
+        <div class="stat-value" id="stat-max">0</div>
+        <div class="stat-label">Из MAX</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">❤️</div>
+        <div class="stat-value" id="stat-reactions">0</div>
+        <div class="stat-label">Синхр. реакций</div>
+      </div>
+    </section>
+
+    <!-- Send Message Box -->
+    <section class="card send-card">
+      <h2 class="card-title">✉️ Отправить сообщение в оба чата</h2>
+      <div class="input-group">
+        <input type="text" id="send-input" placeholder="Введите сообщение..." maxlength="1000">
+        <button id="send-btn" class="primary-btn">Отправить</button>
+      </div>
+    </section>
+
+    <!-- Messages Feed -->
+    <section class="card feed-card">
+      <div class="feed-header">
+        <h2 class="card-title">📋 Синхронизированные сообщения</h2>
+        <div class="feed-actions">
+          <button id="refresh-btn" class="secondary-btn">🔄 Обновить</button>
+        </div>
+      </div>
+      <div id="messages-list" class="messages-list">
+        <div class="empty-state">Загрузка сообщений...</div>
+      </div>
+    </section>
+
+    <!-- Footer info -->
+    <footer class="footer">
+      <p>MAX WebApp Bridge • Платформа: <span id="platform-name">GitHub Pages</span></p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
